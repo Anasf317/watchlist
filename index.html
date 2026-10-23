@@ -86,6 +86,13 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line);border-bottom-width:2
 h2{font:700 22px/1.2 var(--display);margin:0}
 .count{font:500 13px var(--mono);color:var(--muted)}
 .filters{display:flex;gap:6px;flex-wrap:wrap}
+.list-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.import{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:18px;display:flex;flex-direction:column;gap:8px}
+.import-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.bar-track{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}
+.bar-fill{height:100%;width:0;background:var(--accent);transition:width .2s}
+.import ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:13px;max-height:180px;overflow:auto}
+.import summary{cursor:pointer;font-size:13px}
 .chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 12px;font-size:13px;color:var(--muted)}
 .chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px}
@@ -165,12 +172,22 @@ a{color:var(--accent)}
   <section>
     <div class="list-head">
       <div><h2>To watch</h2><span class="count" id="count"></span></div>
+      <div class="list-tools">
+      <button class="btn" id="lbImportBtn" title="Add every film from your Letterboxd watchlist export">Import from Letterboxd</button>
+      <input type="file" id="lbFile" accept=".zip,.csv" hidden>
       <div class="filters" role="group" aria-label="Filter watchlist">
         <button class="chip" data-f="all" aria-pressed="true">All</button>
         <button class="chip" data-f="movie" aria-pressed="false">Movies</button>
         <button class="chip" data-f="show" aria-pressed="false">Series</button>
         <button class="chip" data-f="anime" aria-pressed="false">Anime</button>
       </div>
+      </div>
+    </div>
+    <div class="import" id="importBox" hidden>
+      <div class="import-head"><strong id="importTitle">Importing from Letterboxd</strong><button class="btn" id="importClose" hidden>Done</button></div>
+      <div class="bar-track"><div class="bar-fill" id="importBar"></div></div>
+      <div class="note" id="importStatus"></div>
+      <details id="importMissWrap" hidden><summary id="importMissSum"></summary><ul id="importMiss"></ul></details>
     </div>
     <div class="grid" id="grid"></div>
     <div class="empty" id="listEmpty" hidden></div>
@@ -207,10 +224,24 @@ a{color:var(--accent)}
       <p>In Nuvio, open Settings → Trakt and sign in with the same Trakt account.</p>
       <p class="note">Your watchlist then shows up as a tab in Nuvio's Library.</p>
     </div></div>
+
+    <div class="step"><span class="n">5</span><div>
+      <p>Daily Letterboxd sync <span class="note">(optional)</span></p>
+      <p class="note">Once a day, new films on your public Letterboxd watchlist get added here automatically.</p>
+      <label for="lbUser">Letterboxd username</label><input class="field" id="lbUser" autocomplete="off" placeholder="e.g. anas">
+      <button class="btn" id="makeKey" style="margin-top:8px">Create sync key</button>
+      <div class="code-box" id="keyBox" hidden style="margin-top:12px;text-align:left">
+        <p class="note" style="margin:0 0 6px">Copy this key and save it as a GitHub secret named <code>LB_SYNC_SETUP</code>. It's private: don't share it.</p>
+        <textarea class="field" id="keyOut" rows="4" readonly style="resize:vertical"></textarea>
+        <button class="btn primary" id="copyKey" style="margin-top:8px">Copy key</button>
+      </div>
+    </div></div>
   </div>
 </div>
 
 <div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 (() => {
@@ -261,14 +292,18 @@ async function api(path, { method="GET", body, auth=false } = {}){
   return res.status === 204 ? null : res.json();
 }
 
+let refreshing = null;
 async function ensureFresh(){
   if (!tok) return;
   const expiresAt = (tok.created_at + tok.expires_in) * 1000;
-  if (Date.now() < expiresAt - 24*3600*1000) return;
-  const res = await fetch(API + "/oauth/token", { method:"POST", headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ refresh_token: tok.refresh_token, client_id: cfg.clientId, redirect_uri: REDIRECT, grant_type:"refresh_token" }) });
-  if (res.ok){ tok = await res.json(); store.set("tok", tok); }
-  else { tok = null; store.set("tok", null); renderStatus(); }
+  if (Date.now() < expiresAt - 10*60*1000) return;
+  if (!refreshing) refreshing = (async () => {
+    const res = await fetch(API + "/oauth/token", { method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ refresh_token: tok.refresh_token, client_id: cfg.clientId, redirect_uri: REDIRECT, grant_type:"refresh_token" }) });
+    if (res.ok){ tok = await res.json(); store.set("tok", tok); }
+    else { tok = null; store.set("tok", null); renderStatus(); }
+  })().finally(() => { refreshing = null; });
+  await refreshing;
 }
 
 /* ---------- status / setup ---------- */
@@ -297,16 +332,29 @@ const stopPoll = () => {};
 const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 const randStr = n => b64url(crypto.getRandomValues(new Uint8Array(n)));
 
-$("#signIn").onclick = async () => {
+$("#signIn").onclick = () => startAuth("page");
+$("#makeKey").onclick = () => {
+  const u = $("#lbUser").value.trim().replace(/^@/, "").replace(/^https?:\/\/letterboxd\.com\//i, "").replace(/\/.*$/, "");
+  if (!/^[A-Za-z0-9_]+$/.test(u)) return toast("Enter your Letterboxd username (letters, numbers, underscores).", true);
+  store.set("lbUser", u);
+  startAuth("action", u);
+};
+$("#copyKey").onclick = async () => {
+  const t = $("#keyOut");
+  try { await navigator.clipboard.writeText(t.value); toast("Key copied"); }
+  catch { t.focus(); t.select(); toast("Press Ctrl+C to copy"); }
+};
+
+async function startAuth(purpose, lbUser){
   if (!cfg.clientId) return toast("Save your Client ID first.", true);
   if (!crypto?.subtle) return toast("Sign-in needs a secure (https) page. Open anasf317.github.io/watchlist.", true);
   const verifier = randStr(48), state = randStr(16);
   const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-  try { sessionStorage.setItem("nw_pkce", JSON.stringify({ verifier, state })); } catch {}
+  try { sessionStorage.setItem("nw_pkce", JSON.stringify({ verifier, state, purpose, lbUser })); } catch {}
   const p = new URLSearchParams({ response_type:"code", client_id: cfg.clientId, redirect_uri: REDIRECT, state,
     code_challenge: challenge, code_challenge_method:"S256" });
   location.href = "https://trakt.tv/oauth/authorize?" + p;
-};
+}
 
 async function finishSignIn(){
   const qs = new URLSearchParams(location.search);
@@ -319,6 +367,15 @@ async function finishSignIn(){
     const r = await fetch(API + "/oauth/token", { method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ code: qs.get("code"), client_id: cfg.clientId, redirect_uri: REDIRECT, grant_type:"authorization_code", code_verifier: saved.verifier }) });
     if (!r.ok) throw new Error("Trakt rejected the sign-in (" + r.status + "). Check the Redirect URI in your Trakt app settings.");
+    if (saved.purpose === "action"){
+      // A separate Trakt grant just for the daily GitHub sync, so its token rotation never signs this page out.
+      const t = await r.json();
+      const key = btoa(JSON.stringify({ v:1, u: saved.lbUser, k: randStr(32), r: t.refresh_token }));
+      $("#keyOut").value = key; $("#keyBox").hidden = false; openSheet();
+      $("#lbUser").value = saved.lbUser || "";
+      toast("Sync key ready. Copy it into GitHub.");
+      return;
+    }
     tok = await r.json(); store.set("tok", tok);
     try { const s = await api("/users/settings", { auth:true }); me = s?.user?.username || null; store.set("me", me); } catch {}
     renderStatus(); toast("Signed in to Trakt");
@@ -487,7 +544,100 @@ document.addEventListener("keydown", e => {
   else if (e.key === "Escape"){ $("#q").value = ""; $("#results").hidden = true; results = []; }
 });
 
+/* ---------- Letterboxd import ---------- */
+function parseCSV(text){
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i+1] === '"'){ f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ","){ row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r"){ if (c === "\r" && text[i+1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += c;
+  }
+  if (f || row.length){ row.push(f); rows.push(row); }
+  const head = (rows.shift() || []).map(h => h.trim().toLowerCase());
+  const ni = head.indexOf("name"), yi = head.indexOf("year");
+  if (ni < 0) return null;
+  return rows.filter(r => r[ni]?.trim()).map(r => ({ title: r[ni].trim(), year: yi >= 0 ? r[yi]?.trim() : "" }));
+}
+
+async function readLetterboxdFile(file){
+  if (/\.csv$/i.test(file.name)) return parseCSV(await file.text());
+  if (!window.JSZip) throw new Error("Couldn't load the zip reader. Unzip the export and pick watchlist.csv instead.");
+  const zip = await JSZip.loadAsync(file);
+  const entry = Object.values(zip.files).find(f => /(^|\/)watchlist\.csv$/i.test(f.name));
+  if (!entry) throw new Error("No watchlist.csv in that zip. Make sure it's your Letterboxd data export.");
+  return parseCSV(await entry.async("string"));
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function findMovie(title, year){
+  const tries = year ? [{ query:title, years:year }, { query:title }] : [{ query:title }];
+  for (const t of tries){
+    const rows = await api("/search/movie?" + new URLSearchParams({ ...t, limit:"5", fields:"title,aliases" }));
+    const exact = rows?.find(r => r.movie.title?.toLowerCase() === title.toLowerCase() && (!year || String(r.movie.year) === String(year)));
+    const hit = exact || rows?.[0];
+    if (hit) return hit.movie;
+  }
+  return null;
+}
+
+$("#lbImportBtn").onclick = () => {
+  if (!tok){ toast("Sign in to Trakt first.", true); openSheet(); return; }
+  $("#lbFile").value = ""; $("#lbFile").click();
+};
+$("#importClose").onclick = () => { $("#importBox").hidden = true; };
+$("#lbFile").addEventListener("change", async e => {
+  const file = e.target.files?.[0]; if (!file) return;
+  const box = $("#importBox"), bar = $("#importBar"), st = $("#importStatus");
+  box.hidden = false; $("#importClose").hidden = true; $("#importMissWrap").hidden = true;
+  $("#importTitle").textContent = "Importing from Letterboxd"; bar.style.width = "0";
+  let films;
+  try { films = await readLetterboxdFile(file); }
+  catch (err){ st.textContent = err.message; $("#importClose").hidden = false; return; }
+  if (!films?.length){ st.textContent = "That file has no films in it."; $("#importClose").hidden = false; return; }
+
+  const haveIds = new Set(wl.filter(w => w.type === "movie").map(w => w.item.ids.trakt));
+  const toAdd = [], missing = []; let already = 0;
+  for (let i = 0; i < films.length; i++){
+    const f = films[i];
+    st.textContent = `Matching ${i+1} of ${films.length}: ${f.title}${f.year ? " (" + f.year + ")" : ""}`;
+    bar.style.width = (i / films.length * 90) + "%";
+    try {
+      const m = await findMovie(f.title, f.year);
+      if (!m) missing.push(f);
+      else if (haveIds.has(m.ids.trakt)) already++;
+      else { haveIds.add(m.ids.trakt); toAdd.push(m); }
+    } catch (err){
+      if (/rate-limiting/.test(err.message)){ st.textContent = "Trakt asked us to slow down. Waiting a few seconds…"; await sleep(10000); i--; continue; }
+      missing.push(f);
+    }
+    await sleep(220);
+  }
+  st.textContent = `Adding ${toAdd.length} films to your watchlist…`;
+  let added = 0;
+  try {
+    for (let i = 0; i < toAdd.length; i += 100){
+      const chunk = toAdd.slice(i, i + 100);
+      const res = await api("/sync/watchlist", { method:"POST", auth:true, body:{ movies: chunk.map(m => ({ ids:{ trakt:m.ids.trakt } })) } });
+      added += res?.added?.movies ?? chunk.length;
+    }
+  } catch (err){ st.textContent = "Stopped while adding: " + err.message; $("#importClose").hidden = false; return; }
+  bar.style.width = "100%";
+  $("#importTitle").textContent = "Letterboxd import finished";
+  st.textContent = `Added ${added} · already on your list ${already} · not found ${missing.length}`;
+  if (missing.length){
+    $("#importMissSum").textContent = `Show the ${missing.length} titles Trakt couldn't match`;
+    $("#importMiss").innerHTML = missing.map(f => `<li>${esc(f.title)}${f.year ? " (" + esc(f.year) + ")" : ""}</li>`).join("");
+    $("#importMissWrap").hidden = false;
+  }
+  $("#importClose").hidden = false;
+  loadWatchlist();
+});
+
 /* ---------- boot ---------- */
+$("#lbUser").value = store.get("lbUser") || "";
 $("#redirShow").textContent = REDIRECT;
 $("#originShow").textContent = location.protocol.startsWith("http") ? location.origin : "http://localhost:5173";
 renderStatus();
