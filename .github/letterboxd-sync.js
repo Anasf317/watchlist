@@ -8,6 +8,8 @@ const CLIENT_ID = "5xPgUQBHAjVzms1T4rWmijKoiKQHdSybeR2HwdT0fOI";
 const REDIRECT = "https://anasf317.github.io/watchlist/";
 const STATE_FILE = "sync-state.enc";
 const API = "https://api.trakt.tv";
+// Trakt rejects requests that don't identify the app and the site it's registered for.
+const BASE_HEADERS = { "User-Agent": "anasf317-watchlist-sync/1.0", "Origin": "https://anasf317.github.io", "Referer": REDIRECT };
 
 if (!process.env.SETUP) { console.error("Missing the LB_SYNC_SETUP secret. Create it from the watchlist page's Setup panel."); process.exit(1); }
 let setup;
@@ -79,7 +81,7 @@ async function trakt(path, { method = "GET", body, token } = {}) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const res = await fetch(API + path, {
       method,
-      headers: { "Content-Type": "application/json", "trakt-api-version": "2", "trakt-api-key": CLIENT_ID, ...(token ? { Authorization: "Bearer " + token } : {}) },
+      headers: { ...BASE_HEADERS, "Content-Type": "application/json", "trakt-api-version": "2", "trakt-api-key": CLIENT_ID, ...(token ? { Authorization: "Bearer " + token } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     if (res.status === 429) { await sleep((+res.headers.get("retry-after") || 10) * 1000); continue; }
@@ -106,11 +108,12 @@ async function findMovie(title, year) {
 
   // 1. Refresh the Trakt token and save the new one right away (Trakt rotates refresh tokens).
   const tokRes = await fetch(API + "/oauth/token", {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { ...BASE_HEADERS, "Content-Type": "application/json", "trakt-api-version": "2", "trakt-api-key": CLIENT_ID },
     body: JSON.stringify({ refresh_token: state.refresh, client_id: CLIENT_ID, redirect_uri: REDIRECT, grant_type: "refresh_token" }),
   });
   if (!tokRes.ok) {
-    console.error(`Trakt refused the saved sign-in (${tokRes.status}). Create a new sync key on the watchlist page and update the LB_SYNC_SETUP secret.`);
+    console.error(`Trakt refused the saved sign-in (${tokRes.status}): ${(await tokRes.text().catch(() => "")).slice(0, 300)}`);
+    console.error(`If this keeps happening, create a new sync key on the watchlist page and update the LB_SYNC_SETUP secret.`);
     process.exit(1);
   }
   const tok = await tokRes.json();
