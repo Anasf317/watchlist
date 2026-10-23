@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nuvio Watchlist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column — search bar on top, results drawer below it, watchlist poster wall underneath. Setup lives in a side sheet. */
+:root{
+  --bg:#f3f2f6; --surface:#ffffff; --sunk:#e8e6ee; --fg:#1b1a22; --muted:#66637a; --line:#d8d5e2;
+  --accent:#d9862b; --accent-ink:#ffffff; --accent-soft:#f7e6d2;
+  --movie:#3b6fb6; --series:#7a4bb3; --anime:#c0466b; --ok:#2f8a57; --bad:#c23b3b;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121118; --surface:#1c1b24; --sunk:#16151d; --fg:#ecebf3; --muted:#9a97ad; --line:#2d2b39;
+  --accent:#f0a24a; --accent-ink:#1a1308; --accent-soft:#3a2914;
+  --movie:#6f9ee0; --series:#ad86e6; --anime:#ec7a9c; --ok:#5cc28a; --bad:#ef6f6f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121118; --surface:#1c1b24; --sunk:#16151d; --fg:#ecebf3; --muted:#9a97ad; --line:#2d2b39;
+  --accent:#f0a24a; --accent-ink:#1a1308; --accent-soft:#3a2914;
+  --movie:#6f9ee0; --series:#ad86e6; --anime:#ec7a9c; --ok:#5cc28a; --bad:#ef6f6f; color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+[hidden]{display:none!important}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto}
+
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:28px 18px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:12px;min-width:0}
+h1{font:700 clamp(26px,4vw,34px)/1.1 var(--display);margin:0;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px}
+.status{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;font:500 12px/1 var(--mono);padding:7px 10px;border-radius:999px;background:var(--sunk);color:var(--muted);border:1px solid var(--line)}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.pill.on .dot{background:var(--ok)} .pill.on{color:var(--fg)}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 14px;font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn.primary:hover{filter:brightness(1.05)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* Search */
+.search{position:relative}
+.bar{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px 6px 6px 16px;box-shadow:0 1px 0 var(--line)}
+.bar:focus-within{border-color:var(--accent)}
+.bar svg{flex:none;color:var(--muted)}
+#q{flex:1;min-width:0;border:0;background:transparent;font-size:18px;padding:10px 0;outline:none}
+#q::placeholder{color:var(--muted)}
+.types{display:flex;gap:2px;background:var(--sunk);border-radius:10px;padding:3px;flex:none}
+.types button{border:0;background:transparent;border-radius:7px;padding:6px 10px;font-size:13px;color:var(--muted)}
+.types button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.hint{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12px;padding:8px 4px 0}
+kbd{font:500 11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 5px;background:var(--surface)}
+
+.results{margin-top:10px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.results-head{display:flex;justify-content:space-between;padding:10px 16px;font:500 12px var(--mono);color:var(--muted);border-bottom:1px solid var(--line)}
+.row{display:grid;grid-template-columns:52px 1fr auto;gap:14px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row.active{background:var(--accent-soft)}
+.thumb{width:52px;aspect-ratio:2/3;border-radius:6px;background:var(--sunk) center/cover no-repeat;max-width:100%}
+.info{min-width:0}
+.t{font-weight:600;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.t .y{color:var(--muted);font:400 13px var(--mono)}
+.meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:2px;font-size:12px;color:var(--muted)}
+.ov{color:var(--muted);font-size:13px;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tag{font:600 10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:4px 6px;border-radius:4px;color:#fff}
+.tag.movie{background:var(--movie)} .tag.series{background:var(--series)} .tag.anime{background:var(--anime)}
+.add{white-space:nowrap}
+.add.done{background:transparent;color:var(--ok);border-color:var(--ok)}
+.empty{padding:22px 16px;color:var(--muted);text-align:center}
+
+/* Watchlist */
+.list-head{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;margin:38px 0 14px}
+h2{font:700 22px/1.2 var(--display);margin:0}
+.count{font:500 13px var(--mono);color:var(--muted)}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 12px;font-size:13px;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px}
+.card{min-width:0;display:flex;flex-direction:column;gap:8px}
+.poster{position:relative;aspect-ratio:2/3;border-radius:var(--r);background:var(--sunk) center/cover no-repeat;overflow:hidden;max-width:100%;
+  display:flex;align-items:center;justify-content:center;color:var(--muted);font:600 14px var(--display);text-align:center;padding:10px}
+.poster .tag{position:absolute;top:8px;left:8px}
+.poster .rm{position:absolute;top:6px;right:6px;width:30px;height:30px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:16px;line-height:1;opacity:0;transition:opacity .15s}
+.card:hover .rm,.rm:focus-visible{opacity:1}
+@media (hover:none){.poster .rm{opacity:1}}
+.card .name{font-weight:600;font-size:14px;line-height:1.3;overflow-wrap:anywhere}
+.card .yr{font:400 12px var(--mono);color:var(--muted)}
+.skeleton .poster{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.5}}
+@media (prefers-reduced-motion:reduce){.skeleton .poster{animation:none}}
+
+/* Setup sheet */
+.sheet{position:fixed;inset:0;z-index:20;display:flex;justify-content:flex-end;background:rgba(10,8,16,.45)}
+.panel{width:min(460px,100%);height:100%;overflow:auto;background:var(--surface);border-left:1px solid var(--line);
+  padding:24px max(22px,env(safe-area-inset-right,0px)) 32px 22px;display:flex;flex-direction:column;gap:18px}
+.panel h3{font:700 20px var(--display);margin:0}
+.step{display:grid;grid-template-columns:26px 1fr;gap:12px}
+.step .n{width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font:600 13px/26px var(--mono);text-align:center}
+.step p{margin:0 0 6px}
+.step code{font:12px var(--mono);background:var(--sunk);padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:10px 0 4px}
+.field{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 11px;font:13px var(--mono)}
+.code-box{background:var(--sunk);border:1px dashed var(--line);border-radius:10px;padding:16px;text-align:center}
+.code-box .code{font:700 30px/1.2 var(--mono);letter-spacing:.18em;color:var(--accent);user-select:all}
+.note{font-size:12px;color:var(--muted)}
+a{color:var(--accent)}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);
+  padding:10px 16px;border-radius:10px;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+.toast.err{background:var(--bad);color:#fff}
+
+@media (max-width:560px){
+  .bar{flex-wrap:wrap;padding:6px 8px 8px 14px}
+  .types{width:100%;justify-content:space-between}
+  .types button{flex:1}
+  .row{grid-template-columns:44px 1fr;row-gap:8px}
+  .thumb{width:44px}
+  .row .add{grid-column:2;justify-self:start}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:14px}
+  .hint{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Watchlist</h1>
+      <span class="sub">syncs to Nuvio through Trakt</span>
+    </div>
+    <div class="status">
+      <span class="pill" id="statusPill"><span class="dot"></span><span id="statusText">Not connected</span></span>
+      <button class="btn" id="openSetup">Setup</button>
+    </div>
+  </header>
+
+  <section class="search">
+    <div class="bar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search a movie, series or anime… try “dune 2021”" aria-label="Search titles">
+      <div class="types" role="group" aria-label="Search type">
+        <button data-type="all" aria-pressed="true">All</button>
+        <button data-type="movie" aria-pressed="false">Movies</button>
+        <button data-type="show" aria-pressed="false">Series</button>
+        <button data-type="anime" aria-pressed="false">Anime</button>
+      </div>
+    </div>
+    <div class="hint"><span><kbd>/</kbd> focus search</span><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> add</span><span>Add a year to narrow it down</span></div>
+    <div class="results" id="results" hidden></div>
+  </section>
+
+  <section>
+    <div class="list-head">
+      <div><h2>To watch</h2><span class="count" id="count"></span></div>
+      <div class="filters" role="group" aria-label="Filter watchlist">
+        <button class="chip" data-f="all" aria-pressed="true">All</button>
+        <button class="chip" data-f="movie" aria-pressed="false">Movies</button>
+        <button class="chip" data-f="show" aria-pressed="false">Series</button>
+        <button class="chip" data-f="anime" aria-pressed="false">Anime</button>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="listEmpty" hidden></div>
+  </section>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 id="setupTitle">Connect to Trakt</h3>
+      <button class="btn" id="closeSetup">Close</button>
+    </div>
+    <p class="note" style="margin:0">Nuvio shows your Trakt watchlist in its Library. Anything you add here goes to Trakt, then appears in Nuvio.</p>
+
+    <div class="step"><span class="n">1</span><div>
+      <p>Create a free Trakt app at <a href="https://trakt.tv/oauth/applications/new" target="_blank" rel="noopener">trakt.tv/oauth/applications</a>.</p>
+      <p class="note">Type Production. Redirect URI: <code id="redirShow"></code>. Allowed origins: <code id="originShow"></code>.</p>
+    </div></div>
+
+    <div class="step"><span class="n">2</span><div>
+      <p>Paste the app's Client ID.</p>
+      <label for="cid">Client ID</label><input class="field" id="cid" autocomplete="off">
+      <p class="note" style="margin-top:8px">Saved only in this browser on this computer.</p>
+      <button class="btn" id="saveKeys" style="margin-top:6px">Save</button>
+    </div></div>
+
+    <div class="step"><span class="n">3</span><div>
+      <p>Sign in to Trakt. You'll approve on Trakt's site and come straight back here.</p>
+      <button class="btn primary" id="signIn">Sign in with Trakt</button>
+      <div id="signedIn" hidden><p class="note">Signed in as <strong id="who"></strong>.</p><button class="btn" id="signOut">Sign out</button></div>
+    </div></div>
+
+    <div class="step"><span class="n">4</span><div>
+      <p>In Nuvio, open Settings → Trakt and sign in with the same Trakt account.</p>
+      <p class="note">Your watchlist then shows up as a tab in Nuvio's Library.</p>
+    </div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+const API = "https://api.trakt.tv";
+const REDIRECT = location.protocol.startsWith("http") ? location.origin + location.pathname : "http://localhost:5173/nuvio-watchlist.html";
+const $ = s => document.querySelector(s);
+
+/* ---------- storage ---------- */
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem("nw_"+k)); } catch { return null; } },
+  set(k,v){ try { v==null ? localStorage.removeItem("nw_"+k) : localStorage.setItem("nw_"+k, JSON.stringify(v)); } catch {} }
+};
+let cfg = store.get("cfg") || { clientId:"" };
+let tok = store.get("tok");           // {access_token, refresh_token, created_at, expires_in}
+let me = store.get("me");
+
+/* ---------- helpers ---------- */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let toastTimer;
+function toast(msg, err=false){
+  const t = $("#toast"); t.textContent = msg; t.className = "toast" + (err?" err":""); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3200);
+}
+function img(item){
+  const p = item?.images?.poster?.[0] || item?.images?.thumb?.[0];
+  if (!p) return "";
+  return p.startsWith("http") ? p : "https://" + p;
+}
+const isAnime = it => (it?.genres || []).includes("anime");
+const kindOf = (type, it) => isAnime(it) ? "anime" : (type === "movie" ? "movie" : "series");
+const kindLabel = { movie:"Movie", series:"Series", anime:"Anime" };
+
+async function api(path, { method="GET", body, auth=false } = {}){
+  if (!cfg.clientId) throw new Error("Add your Trakt Client ID in Setup first.");
+  const headers = { "Content-Type":"application/json", "trakt-api-version":"2", "trakt-api-key": cfg.clientId };
+  if (auth){
+    await ensureFresh();
+    if (!tok) throw new Error("Sign in to Trakt in Setup first.");
+    headers.Authorization = "Bearer " + tok.access_token;
+  }
+  let res;
+  try { res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined }); }
+  catch { throw new Error("Couldn't reach Trakt. Check your connection, or open this page from a local server (see notes)."); }
+  if (res.status === 401 && auth){ tok = null; store.set("tok", null); renderStatus(); throw new Error("Your Trakt sign-in expired. Sign in again in Setup."); }
+  if (res.status === 429) throw new Error("Trakt is rate-limiting requests. Wait a moment and try again.");
+  if (!res.ok) throw new Error("Trakt returned an error (" + res.status + ").");
+  return res.status === 204 ? null : res.json();
+}
+
+async function ensureFresh(){
+  if (!tok) return;
+  const expiresAt = (tok.created_at + tok.expires_in) * 1000;
+  if (Date.now() < expiresAt - 24*3600*1000) return;
+  const res = await fetch(API + "/oauth/token", { method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ refresh_token: tok.refresh_token, client_id: cfg.clientId, redirect_uri: REDIRECT, grant_type:"refresh_token" }) });
+  if (res.ok){ tok = await res.json(); store.set("tok", tok); }
+  else { tok = null; store.set("tok", null); renderStatus(); }
+}
+
+/* ---------- status / setup ---------- */
+function renderStatus(){
+  const on = !!tok;
+  $("#statusPill").classList.toggle("on", on);
+  $("#statusText").textContent = on ? (me ? "@" + me : "Connected") : (cfg.clientId ? "Search only, not signed in" : "Not connected");
+  $("#signedIn").hidden = !on;
+  $("#signIn").hidden = on;
+  if (on) $("#who").textContent = me ? "@" + me : "your account";
+  $("#cid").value = cfg.clientId || "";
+}
+const openSheet = () => { $("#sheet").hidden = false; setTimeout(() => (cfg.clientId ? $("#signIn") : $("#cid")).focus(), 30); };
+const closeSheet = () => { $("#sheet").hidden = true; stopPoll(); };
+$("#openSetup").onclick = openSheet;
+$("#closeSetup").onclick = closeSheet;
+$("#sheet").addEventListener("click", e => { if (e.target.id === "sheet") closeSheet(); });
+
+$("#saveKeys").onclick = () => {
+  cfg = { clientId: $("#cid").value.trim() };
+  if (!cfg.clientId) return toast("Paste your Client ID first.", true);
+  store.set("cfg", cfg); renderStatus(); toast("Client ID saved");
+};
+
+const stopPoll = () => {};
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const randStr = n => b64url(crypto.getRandomValues(new Uint8Array(n)));
+
+$("#signIn").onclick = async () => {
+  if (!cfg.clientId) return toast("Save your Client ID first.", true);
+  if (!crypto?.subtle) return toast("Open the page through start-watchlist.bat (localhost) to sign in.", true);
+  const verifier = randStr(48), state = randStr(16);
+  const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+  try { sessionStorage.setItem("nw_pkce", JSON.stringify({ verifier, state })); } catch {}
+  const p = new URLSearchParams({ response_type:"code", client_id: cfg.clientId, redirect_uri: REDIRECT, state,
+    code_challenge: challenge, code_challenge_method:"S256" });
+  location.href = "https://trakt.tv/oauth/authorize?" + p;
+};
+
+async function finishSignIn(){
+  const qs = new URLSearchParams(location.search);
+  if (!qs.has("code") && !qs.has("error")) return;
+  history.replaceState(null, "", location.pathname);
+  if (qs.has("error")) return toast("Trakt sign-in was cancelled.", true);
+  let saved = null; try { saved = JSON.parse(sessionStorage.getItem("nw_pkce")); sessionStorage.removeItem("nw_pkce"); } catch {}
+  if (!saved || saved.state !== qs.get("state")) return toast("Sign-in check failed. Click Sign in again.", true);
+  try {
+    const r = await fetch(API + "/oauth/token", { method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ code: qs.get("code"), client_id: cfg.clientId, redirect_uri: REDIRECT, grant_type:"authorization_code", code_verifier: saved.verifier }) });
+    if (!r.ok) throw new Error("Trakt rejected the sign-in (" + r.status + "). Check the Redirect URI in your Trakt app settings.");
+    tok = await r.json(); store.set("tok", tok);
+    try { const s = await api("/users/settings", { auth:true }); me = s?.user?.username || null; store.set("me", me); } catch {}
+    renderStatus(); toast("Signed in to Trakt");
+  } catch (e){ toast(e.message, true); }
+}
+$("#signOut").onclick = () => { tok = null; me = null; store.set("tok", null); store.set("me", null); wl = []; renderList(); renderStatus(); toast("Signed out"); };
+
+/* ---------- watchlist ---------- */
+let wl = [];                 // [{key, type, item}]
+let wlKeys = new Set();
+let filter = "all";
+const keyOf = (type, item) => type + ":" + item.ids.trakt;
+
+async function loadWatchlist(){
+  if (!tok){ wl = []; renderList(); return; }
+  $("#grid").innerHTML = Array.from({length:6}, () => '<div class="card skeleton"><div class="poster"></div></div>').join("");
+  try {
+    const rows = await api("/sync/watchlist/movies,shows/added/desc?extended=full,images", { auth:true });
+    wl = (rows || []).filter(r => r.movie || r.show).map(r => {
+      const type = r.movie ? "movie" : "show"; const item = r[type];
+      return { key: keyOf(type, item), type, item };
+    });
+  } catch (e){ toast(e.message, true); wl = []; }
+  renderList();
+}
+
+function renderList(){
+  wlKeys = new Set(wl.map(w => w.key));
+  const shown = wl.filter(w => filter === "all" || (filter === "anime" ? isAnime(w.item) : (w.type === filter && !isAnime(w.item))));
+  const n = { movie:0, series:0, anime:0 }; wl.forEach(w => n[kindOf(w.type, w.item)]++);
+  $("#count").textContent = wl.length ? `${wl.length} titles · ${n.movie} movies · ${n.series} series · ${n.anime} anime` : "";
+  const empty = $("#listEmpty");
+  if (!tok){ empty.hidden = false; empty.innerHTML = 'Connect Trakt in <button class="btn" id="emptySetup">Setup</button> to see and add to your watchlist.'; $("#emptySetup").onclick = openSheet; $("#grid").innerHTML = ""; return; }
+  if (!shown.length){ empty.hidden = false; empty.textContent = wl.length ? "Nothing in this filter yet." : "Your watchlist is empty. Search above and add your first title."; $("#grid").innerHTML = ""; return; }
+  empty.hidden = true;
+  $("#grid").innerHTML = shown.map(w => {
+    const k = kindOf(w.type, w.item), src = img(w.item);
+    return `<div class="card">
+      <div class="poster" ${src ? `style="background-image:url('${esc(src)}')"` : ""}>
+        ${src ? "" : esc(w.item.title)}
+        <span class="tag ${k}">${kindLabel[k]}</span>
+        <button class="rm" data-key="${esc(w.key)}" aria-label="Remove ${esc(w.item.title)} from watchlist" title="Remove">×</button>
+      </div>
+      <div><div class="name">${esc(w.item.title)}</div><div class="yr">${esc(w.item.year || "")}</div></div>
+    </div>`;
+  }).join("");
+}
+
+$("#grid").addEventListener("click", async e => {
+  const b = e.target.closest(".rm"); if (!b) return;
+  const w = wl.find(x => x.key === b.dataset.key); if (!w) return;
+  const idx = wl.indexOf(w);
+  wl.splice(idx, 1); renderList(); renderResults();
+  try {
+    await api("/sync/watchlist/remove", { method:"POST", auth:true, body: { [w.type === "movie" ? "movies" : "shows"]: [{ ids:{ trakt: w.item.ids.trakt } }] } });
+    toast("Removed " + w.item.title);
+  } catch (err){ wl.splice(idx, 0, w); renderList(); renderResults(); toast(err.message, true); }
+});
+
+document.querySelectorAll(".filters .chip").forEach(b => b.onclick = () => {
+  filter = b.dataset.f;
+  document.querySelectorAll(".filters .chip").forEach(x => x.setAttribute("aria-pressed", x === b));
+  renderList();
+});
+
+/* ---------- smart search ---------- */
+let sType = "all", results = [], active = -1, seq = 0, debounce;
+document.querySelectorAll(".types button").forEach(b => b.onclick = () => {
+  sType = b.dataset.type;
+  document.querySelectorAll(".types button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  runSearch(); $("#q").focus();
+});
+
+function parseQuery(raw){
+  let q = raw.trim(), years = null;
+  const m = q.match(/^(.*?)[\s(]+((?:19|20)\d{2})\)?$/);
+  if (m && m[1].trim()){ q = m[1].trim(); years = m[2]; }
+  return { q, years };
+}
+
+$("#q").addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(runSearch, 280); });
+
+async function runSearch(){
+  const raw = $("#q").value; const { q, years } = parseQuery(raw);
+  const box = $("#results");
+  if (q.length < 2){ box.hidden = true; results = []; return; }
+  if (!cfg.clientId){ box.hidden = false; box.innerHTML = '<div class="empty">Add your Trakt Client ID in Setup to search.</div>'; return; }
+  const my = ++seq;
+  const types = sType === "movie" ? "movie" : sType === "show" ? "show" : "movie,show";
+  const p = new URLSearchParams({ query:q, extended:"full,images", limit:"12", fields:"title,translations,aliases" });
+  if (years) p.set("years", years);
+  if (sType === "anime") p.set("genres", "anime");
+  box.hidden = false; box.innerHTML = '<div class="empty">Searching…</div>';
+  try {
+    const rows = await api(`/search/${types}?${p}`);
+    if (my !== seq) return;
+    results = (rows || []).filter(r => r.movie || r.show).map(r => {
+      const type = r.type; const item = r[type];
+      return { key: keyOf(type, item), type, item, score: r.score || 0 };
+    });
+    // Smarter ordering: exact title matches first, then Trakt relevance, then popularity.
+    const ql = q.toLowerCase();
+    results.sort((a,b) => (b.item.title?.toLowerCase() === ql) - (a.item.title?.toLowerCase() === ql)
+      || b.score - a.score || (b.item.votes||0) - (a.item.votes||0));
+    active = results.length ? 0 : -1;
+    renderResults(years);
+  } catch (e){ if (my === seq){ box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; } }
+}
+
+function renderResults(years){
+  const box = $("#results");
+  if (box.hidden || !results.length){
+    if (!box.hidden && $("#q").value.trim().length >= 2 && !box.querySelector(".empty"))
+      box.innerHTML = '<div class="empty">No matches. Try another spelling, or remove the year.</div>';
+    if (!results.length && !box.hidden && box.querySelector(".row")) box.innerHTML = '<div class="empty">No matches. Try another spelling, or remove the year.</div>';
+    return;
+  }
+  const yr = years ? ` · ${years}` : "";
+  box.innerHTML = `<div class="results-head"><span>${results.length} results${esc(yr)}</span><span>${tok ? "Enter adds the highlighted title" : "Sign in to add"}</span></div>` +
+    results.map((r,i) => {
+      const k = kindOf(r.type, r.item), src = img(r.item), inList = wlKeys.has(r.key);
+      const rating = r.item.rating ? `★ ${r.item.rating.toFixed(1)}` : "";
+      const extra = r.type === "show" && r.item.aired_episodes ? `${r.item.aired_episodes} episodes` : (r.item.runtime ? `${r.item.runtime} min` : "");
+      return `<div class="row${i === active ? " active" : ""}" data-i="${i}">
+        <div class="thumb" ${src ? `style="background-image:url('${esc(src)}')"` : ""}></div>
+        <div class="info">
+          <div class="t">${esc(r.item.title)} <span class="y">${esc(r.item.year || "")}</span></div>
+          <div class="meta"><span class="tag ${k}">${kindLabel[k]}</span>${rating ? `<span>${rating}</span>` : ""}${extra ? `<span>${esc(extra)}</span>` : ""}</div>
+          ${r.item.overview ? `<div class="ov">${esc(r.item.overview)}</div>` : ""}
+        </div>
+        <button class="btn add${inList ? " done" : " primary"}" data-i="${i}" ${inList ? "disabled" : ""}>${inList ? "In watchlist ✓" : "+ Add"}</button>
+      </div>`;
+    }).join("");
+}
+
+$("#results").addEventListener("click", e => { const b = e.target.closest(".add"); if (b) addAt(+b.dataset.i); });
+$("#results").addEventListener("mousemove", e => {
+  const row = e.target.closest(".row"); if (!row) return;
+  const i = +row.dataset.i; if (i !== active){ active = i; $("#results").querySelectorAll(".row").forEach((r,j) => r.classList.toggle("active", j === i)); }
+});
+
+async function addAt(i){
+  const r = results[i]; if (!r) return;
+  if (!tok){ toast("Sign in to Trakt first.", true); openSheet(); return; }
+  if (wlKeys.has(r.key)) return toast(r.item.title + " is already on your watchlist");
+  wl.unshift({ key:r.key, type:r.type, item:r.item }); renderList(); renderResults();
+  try {
+    const res = await api("/sync/watchlist", { method:"POST", auth:true, body: { [r.type === "movie" ? "movies" : "shows"]: [{ ids:{ trakt: r.item.ids.trakt } }] } });
+    const nf = res?.not_found; const miss = (nf?.movies?.length || 0) + (nf?.shows?.length || 0);
+    if (miss) throw new Error("Trakt couldn't find that title.");
+    toast("Added " + r.item.title + " · it'll show in Nuvio on next sync");
+  } catch (e){ wl = wl.filter(w => w.key !== r.key); renderList(); renderResults(); toast(e.message, true); }
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$("#sheet").hidden){ closeSheet(); return; }
+  if (e.key === "/" && document.activeElement.tagName !== "INPUT"){ e.preventDefault(); $("#q").focus(); return; }
+  if (document.activeElement !== $("#q") || !results.length || $("#results").hidden) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+    e.preventDefault();
+    active = (active + (e.key === "ArrowDown" ? 1 : -1) + results.length) % results.length;
+    const rows = $("#results").querySelectorAll(".row");
+    rows.forEach((r,j) => r.classList.toggle("active", j === active));
+    rows[active]?.scrollIntoView({ block:"nearest" });
+  } else if (e.key === "Enter" && active >= 0){ e.preventDefault(); addAt(active); }
+  else if (e.key === "Escape"){ $("#q").value = ""; $("#results").hidden = true; results = []; }
+});
+
+/* ---------- boot ---------- */
+$("#redirShow").textContent = REDIRECT;
+$("#originShow").textContent = location.protocol.startsWith("http") ? location.origin : "http://localhost:5173";
+renderStatus();
+finishSignIn().then(() => { if (!cfg.clientId) openSheet(); else loadWatchlist(); });
+})();
+</script>
+</body>
+</html>
