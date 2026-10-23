@@ -1,0 +1,32 @@
+name: Letterboxd sync
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # every day at 6:17 Riyadh time
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: letterboxd-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Add new Letterboxd films to Trakt
+        run: node .github/letterboxd-sync.js
+        env:
+          SETUP: ${{ secrets.LB_SYNC_SETUP }}
+      - name: Save sync progress
+        if: always()
+        run: |
+          git config user.name "watchlist-sync"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -f sync-state.enc ]; then git add sync-state.enc; fi
+          git diff --cached --quiet || (git commit -m "Update Letterboxd sync progress" && git push)
