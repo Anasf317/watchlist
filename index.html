@@ -223,7 +223,8 @@ const store = {
   get(k){ try { return JSON.parse(localStorage.getItem("nw_"+k)); } catch { return null; } },
   set(k,v){ try { v==null ? localStorage.removeItem("nw_"+k) : localStorage.setItem("nw_"+k, JSON.stringify(v)); } catch {} }
 };
-let cfg = store.get("cfg") || { clientId:"" };
+const DEFAULT_CLIENT_ID = "5xPgUQBHAjVzms1T4rWmijKoiKQHdSybeR2HwdT0fOI";
+let cfg = store.get("cfg") || { clientId: DEFAULT_CLIENT_ID };
 let tok = store.get("tok");           // {access_token, refresh_token, created_at, expires_in}
 let me = store.get("me");
 
@@ -253,7 +254,7 @@ async function api(path, { method="GET", body, auth=false } = {}){
   }
   let res;
   try { res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined }); }
-  catch { throw new Error("Couldn't reach Trakt. Check your connection, or open this page from a local server (see notes)."); }
+  catch { throw new Error("Couldn't reach Trakt. Check your connection and try again."); }
   if (res.status === 401 && auth){ tok = null; store.set("tok", null); renderStatus(); throw new Error("Your Trakt sign-in expired. Sign in again in Setup."); }
   if (res.status === 429) throw new Error("Trakt is rate-limiting requests. Wait a moment and try again.");
   if (!res.ok) throw new Error("Trakt returned an error (" + res.status + ").");
@@ -298,7 +299,7 @@ const randStr = n => b64url(crypto.getRandomValues(new Uint8Array(n)));
 
 $("#signIn").onclick = async () => {
   if (!cfg.clientId) return toast("Save your Client ID first.", true);
-  if (!crypto?.subtle) return toast("Open the page through start-watchlist.bat (localhost) to sign in.", true);
+  if (!crypto?.subtle) return toast("Sign-in needs a secure (https) page. Open anasf317.github.io/watchlist.", true);
   const verifier = randStr(48), state = randStr(16);
   const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   try { sessionStorage.setItem("nw_pkce", JSON.stringify({ verifier, state })); } catch {}
@@ -490,7 +491,7 @@ document.addEventListener("keydown", e => {
 $("#redirShow").textContent = REDIRECT;
 $("#originShow").textContent = location.protocol.startsWith("http") ? location.origin : "http://localhost:5173";
 renderStatus();
-finishSignIn().then(() => { if (!cfg.clientId) openSheet(); else loadWatchlist(); });
+finishSignIn().then(() => { if (!cfg.clientId || !tok) openSheet(); loadWatchlist(); });
 })();
 </script>
 </body>
